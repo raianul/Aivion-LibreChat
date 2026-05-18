@@ -209,6 +209,8 @@ const startServer = async () => {
 
   app.use('/api/tags', routes.tags);
   app.use('/api/mcp', routes.mcp);
+  app.use('/api/aivion/workflow', routes.aivionWorkflow);
+  app.use('/internal/cleanup', routes.aivionCleanup);
 
   app.use('/metrics', metricsRouter);
 

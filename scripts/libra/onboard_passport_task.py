@@ -260,7 +260,10 @@ def create_bifrost_prompt(admin: BifrostAdmin, dry_run: bool) -> str | None:
 
     r2 = admin.client.post(
         f"/api/prompt-repo/prompts/{prompt_id}/versions",
-        json={"content": PROMPT_CONTENT, "commit_message": COMMIT_MESSAGE},
+        json={
+            "messages": [{"role": "system", "content": PROMPT_CONTENT}],
+            "commit_message": COMMIT_MESSAGE,
+        },
     )
     r2.raise_for_status()
     version_number = r2.json()["version"]["version_number"]

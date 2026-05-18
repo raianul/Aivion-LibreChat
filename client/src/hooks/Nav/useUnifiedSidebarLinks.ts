@@ -1,11 +1,13 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
-import { MessagesSquare } from 'lucide-react';
+import { MessagesSquare, Workflow } from 'lucide-react';
 import { useUserKeyQuery } from 'librechat-data-provider/react-query';
 import { getConfigDefaults, getEndpointField } from 'librechat-data-provider';
 import type { TEndpointsConfig } from 'librechat-data-provider';
+import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { NavLink } from '~/common';
 import ConversationsSection from '~/components/UnifiedSidebar/ConversationsSection';
+import WorkflowRunsSection from '~/components/Aivion/Workflow/WorkflowRunsSection';
 import { useGetEndpointsQuery, useGetStartupConfig } from '~/data-provider';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import store from '~/store';
@@ -58,7 +60,15 @@ export default function useUnifiedSidebarLinks() {
       Component: ConversationsSection,
     };
 
-    return [conversationLink, ...sideNavLinks];
+    const workflowLink: NavLink = {
+      title: 'com_ui_workflows' as TranslationKeys,
+      label: '',
+      icon: Workflow,
+      id: 'aivion-workflows',
+      Component: WorkflowRunsSection,
+    };
+
+    return [conversationLink, ...sideNavLinks, workflowLink];
   }, [sideNavLinks]);
 
   return links;

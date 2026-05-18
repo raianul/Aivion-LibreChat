@@ -32,9 +32,13 @@ const auth = require('./auth');
 const keys = require('./keys');
 const user = require('./user');
 const mcp = require('./mcp');
+const aivionWorkflow = require('./aivion/workflow');
+const aivionCleanup = require('./aivion/cleanup');
 
 module.exports = {
   mcp,
+  aivionWorkflow,
+  aivionCleanup,
   auth,
   adminAuth,
   adminConfig,

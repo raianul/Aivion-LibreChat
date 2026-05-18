@@ -161,6 +161,36 @@ export const router = createBrowserRouter(
                 </MarketplaceProvider>
               ),
             },
+            {
+              path: 'workflow',
+              lazy: () =>
+                import('~/components/Aivion/Workflow/WorkflowLayout').then((m) => ({
+                  Component: m.default,
+                })),
+              children: [
+                {
+                  index: true,
+                  lazy: () =>
+                    import('~/components/Aivion/Workflow/WorkflowList').then((m) => ({
+                      Component: m.default,
+                    })),
+                },
+                {
+                  path: ':id',
+                  lazy: () =>
+                    import('~/components/Aivion/Workflow/WorkflowDetail').then((m) => ({
+                      Component: m.default,
+                    })),
+                },
+                {
+                  path: ':id/runs/:runId',
+                  lazy: () =>
+                    import('~/components/Aivion/Workflow/WorkflowRun').then((m) => ({
+                      Component: m.default,
+                    })),
+                },
+              ],
+            },
           ],
         },
       ],
