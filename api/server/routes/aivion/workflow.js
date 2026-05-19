@@ -45,10 +45,10 @@ router.get('/runs', async (req, res) => {
   }
 });
 
-// GET /api/aivion/workflow/workflows → sheru-platform-backend /admin/api/v1/workspace/workflows
+// GET /api/aivion/workflow/workflows → sheru-platform-workflow /v1/workflows (includes is_runnable)
 router.get('/workflows', async (req, res) => {
   try {
-    const { data } = await axios.get(`${BACKEND_URL}/admin/api/v1/workspace/workflows`, {
+    const { data } = await axios.get(`${WORKFLOW_URL}/v1/workflows`, {
       headers: serviceHeaders(req),
     });
     res.json(data);
@@ -124,6 +124,94 @@ router.post('/uploads', upload.single('file'), async (req, res) => {
     const { data } = await axios.post(`${WORKFLOW_URL}/v1/uploads`, form, {
       headers: { ...serviceHeaders(req), ...form.getHeaders() },
     });
+    res.json(data);
+  } catch (err) {
+    const status = err.response?.status ?? 502;
+    res.status(status).json({ error: err.response?.data ?? 'upstream error' });
+  }
+});
+
+// GET /api/aivion/workflow/runs/:runId/stream → SSE proxy (piped, long-lived)
+router.get('/runs/:runId/stream', async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  const userId = req.user?.openidId || req.user?.id || 'unknown';
+  try {
+    const upstream = await axios.get(
+      `${WORKFLOW_URL}/v1/workflow-runs/${req.params.runId}/stream`,
+      {
+        headers: {
+          Authorization: `Bearer ${SERVICE_TOKEN}`,
+          'X-User-Id': userId,
+          Accept: 'text/event-stream',
+        },
+        responseType: 'stream',
+        timeout: 0,
+      },
+    );
+    upstream.data.pipe(res);
+    req.on('close', () => upstream.data.destroy());
+  } catch (err) {
+    res.write(`event: error\ndata: ${JSON.stringify({ error: 'upstream error' })}\n\n`);
+    res.end();
+  }
+});
+
+// GET /api/aivion/workflow/connections → sheru-platform-workflow /v1/connections
+router.get('/connections', async (req, res) => {
+  try {
+    const { data } = await axios.get(`${WORKFLOW_URL}/v1/connections`, {
+      headers: serviceHeaders(req),
+    });
+    res.json(data);
+  } catch (err) {
+    const status = err.response?.status ?? 502;
+    res.status(status).json({ error: err.response?.data ?? 'upstream error' });
+  }
+});
+
+// POST /api/aivion/workflow/connections/:service/initiate
+router.post('/connections/:service/initiate', async (req, res) => {
+  try {
+    const { data } = await axios.post(
+      `${WORKFLOW_URL}/v1/connections/${req.params.service}/initiate`,
+      {},
+      { headers: serviceHeaders(req) },
+    );
+    res.json(data);
+  } catch (err) {
+    const status = err.response?.status ?? 502;
+    res.status(status).json({ error: err.response?.data ?? 'upstream error' });
+  }
+});
+
+// POST /api/aivion/workflow/runs/:runId/chat → sheru-platform-workflow /v1/workflow-runs/:runId/chat
+router.post('/runs/:runId/chat', async (req, res) => {
+  try {
+    const { data } = await axios.post(
+      `${WORKFLOW_URL}/v1/workflow-runs/${req.params.runId}/chat`,
+      req.body,
+      { headers: serviceHeaders(req) },
+    );
+    res.json(data);
+  } catch (err) {
+    const status = err.response?.status ?? 502;
+    const detail = err.response?.data?.detail ?? err.response?.data ?? 'upstream error';
+    res.status(status).json({ error: detail });
+  }
+});
+
+// DELETE /api/aivion/workflow/connections/:service
+router.delete('/connections/:service', async (req, res) => {
+  try {
+    const { data } = await axios.delete(
+      `${WORKFLOW_URL}/v1/connections/${req.params.service}`,
+      { headers: serviceHeaders(req) },
+    );
     res.json(data);
   } catch (err) {
     const status = err.response?.status ?? 502;

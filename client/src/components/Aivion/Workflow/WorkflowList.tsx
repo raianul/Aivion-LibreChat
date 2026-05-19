@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuthContext } from '~/hooks/AuthContext';
 import type { Workflow } from './types';
 
@@ -71,11 +71,16 @@ export default function WorkflowList() {
       <div className="grid gap-4 sm:grid-cols-2">
         {workflows.map((wf) => {
           const steps = visibleSteps(wf);
+          const notRunnable = wf.is_runnable === false;
           return (
             <button
               key={wf.id}
               onClick={() => navigate(`/workflow/${wf.id}`)}
-              className="group flex flex-col gap-3 rounded-xl border border-border-light bg-surface-primary p-5 text-left transition-colors hover:border-border-medium hover:bg-surface-hover"
+              className={`group flex flex-col gap-3 rounded-xl border bg-surface-primary p-5 text-left transition-colors hover:bg-surface-hover ${
+                notRunnable
+                  ? 'border-amber-200 dark:border-amber-700/40'
+                  : 'border-border-light hover:border-border-medium'
+              }`}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-950/30 dark:text-amber-400">
@@ -97,22 +102,37 @@ export default function WorkflowList() {
                 )}
               </div>
 
-              {steps.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {steps.map((s) => (
-                    <span
-                      key={s.id}
-                      className="rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-950/30 dark:text-amber-400"
-                    >
-                      {STEP_BADGE[s.type] ?? s.type}
-                    </span>
-                  ))}
-                </div>
-              )}
+              <div className="flex flex-wrap items-center gap-1.5">
+                {steps.map((s) => (
+                  <span
+                    key={s.id}
+                    className="rounded-md bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-950/30 dark:text-amber-400"
+                  >
+                    {STEP_BADGE[s.type] ?? s.type}
+                  </span>
+                ))}
+                {notRunnable && (
+                  <span className="rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                    ⚠ Connect required
+                  </span>
+                )}
+              </div>
             </button>
           );
         })}
       </div>
+
+      {workflows.some((w) => w.is_runnable === false) && (
+        <div className="mt-6 flex items-center gap-2 text-sm text-text-secondary">
+          <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" className="shrink-0 text-amber-500" aria-hidden>
+            <path fillRule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v4.5a.75.75 0 01-1.5 0v-4.5A.75.75 0 0110 5zm0 10a1 1 0 100-2 1 1 0 000 2z" clipRule="evenodd" />
+          </svg>
+          Some workflows need service connections.{' '}
+          <Link to="/connections" className="font-medium text-amber-600 hover:underline">
+            Manage connections →
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

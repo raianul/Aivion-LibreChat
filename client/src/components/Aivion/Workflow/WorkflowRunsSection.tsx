@@ -3,7 +3,85 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ChevronDown, ClipboardList } from 'lucide-react';
 import { useAuthContext, useLocalStorage } from '~/hooks';
 import { cn } from '~/utils';
-import type { RunStatus } from './types';
+import type { RunStatus, WorkflowStep } from './types';
+
+type PipelineStep = WorkflowStep;
+type PipelineRunState = {
+  status: RunStatus;
+  pending_step_id: string | null;
+  completed_steps: Record<string, unknown>;
+};
+type PipelineData = {
+  run: PipelineRunState;
+  steps: PipelineStep[];
+  workflowName: string;
+  workflowId: string;
+};
+
+type StepState = 'completed' | 'running' | 'awaiting' | 'pending';
+
+function getPipelineStepState(step: PipelineStep, run: PipelineRunState): StepState {
+  if (step.id in run.completed_steps) return 'completed';
+  if (run.pending_step_id === step.id) {
+    return run.status === 'awaiting_user' || run.status === 'awaiting_oauth' ? 'awaiting' : 'running';
+  }
+  return 'pending';
+}
+
+function PipelineStepIcon({ state }: { state: StepState }) {
+  if (state === 'completed') {
+    return (
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-green-100 dark:bg-green-900/30">
+        <svg className="h-4 w-4 text-green-600" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+        </svg>
+      </span>
+    );
+  }
+  if (state === 'running') {
+    return (
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-blue-50 dark:bg-blue-900/20">
+        <svg className="h-4 w-4 animate-spin text-blue-500" viewBox="0 0 24 24" fill="none" aria-hidden>
+          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" className="opacity-25" />
+          <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" className="opacity-75" />
+        </svg>
+      </span>
+    );
+  }
+  if (state === 'awaiting') {
+    return (
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-purple-100 dark:bg-purple-900/20">
+        <svg className="h-3 w-3 text-purple-600" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+          <rect x="6" y="4" width="4" height="16" rx="1" />
+          <rect x="14" y="4" width="4" height="16" rx="1" />
+        </svg>
+      </span>
+    );
+  }
+  return (
+    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-border-light dark:border-gray-700" />
+  );
+}
+
+const PIPELINE_STATUS_BADGE: Record<RunStatus, string> = {
+  pending: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
+  running: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  awaiting_user: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  awaiting_oauth: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  completed: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+  failed: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  cancelled: 'text-text-secondary bg-surface-secondary',
+};
+
+const PIPELINE_STATUS_LABEL: Record<RunStatus, string> = {
+  pending: 'Queued',
+  running: 'Running',
+  awaiting_user: 'Awaiting Review',
+  awaiting_oauth: 'Needs Reconnect',
+  completed: 'Completed',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+};
 
 type RunSummary = {
   id: string;
@@ -17,6 +95,7 @@ const STATUS_DOT: Record<RunStatus, string> = {
   pending: 'bg-amber-400',
   running: 'bg-blue-400 animate-pulse',
   awaiting_user: 'bg-purple-400 animate-pulse',
+  awaiting_oauth: 'bg-red-400',
   completed: 'bg-green-400',
   failed: 'bg-red-400',
   cancelled: 'bg-surface-tertiary',
@@ -26,6 +105,7 @@ const STATUS_LABEL: Record<RunStatus, string> = {
   pending: 'Queued',
   running: 'Running',
   awaiting_user: 'Waiting',
+  awaiting_oauth: 'Needs reconnect',
   completed: 'Done',
   failed: 'Failed',
   cancelled: 'Cancelled',
@@ -126,6 +206,7 @@ export default function WorkflowRunsSection() {
   const [runs, setRuns] = useState<RunSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [isExpanded, setIsExpanded] = useLocalStorage('workflowRunsExpanded', true);
+  const [pipeline, setPipeline] = useState<PipelineData | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -139,8 +220,141 @@ export default function WorkflowRunsSection() {
       .finally(() => setLoading(false));
   }, [token]);
 
+  useEffect(() => {
+    if (!runId || !token) {
+      setPipeline(null);
+      return;
+    }
+    fetch(`/api/aivion/workflow/runs/${runId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(async (run) => {
+        if (!run) return;
+        const wf = await fetch(`/api/aivion/workflow/workflows/${run.workflow_id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).then((r) => (r.ok ? r.json() : null));
+        if (wf) {
+          setPipeline({
+            run: {
+              status: run.status,
+              pending_step_id: run.pending_step_id ?? null,
+              completed_steps: (run.outputs?._completed_steps ?? {}) as Record<string, unknown>,
+            },
+            steps: (wf.spec?.steps ?? []) as PipelineStep[],
+            workflowName: wf.name ?? 'Workflow',
+            workflowId: run.workflow_id,
+          });
+        }
+      })
+      .catch(() => null);
+  }, [runId, token]);
+
+  // Keep pipeline run state in sync with SSE updates via polling the runs list
+  useEffect(() => {
+    if (!pipeline || !runId) return;
+    const match = runs.find((r) => r.id === runId);
+    if (match && match.status !== pipeline.run.status) {
+      setPipeline((prev) =>
+        prev ? { ...prev, run: { ...prev.run, status: match.status } } : prev,
+      );
+    }
+  }, [runs, runId, pipeline]);
+
   const grouped = useMemo(() => groupRunsByDate(runs), [runs]);
 
+  // ── Pipeline view (when viewing an active run) ────────────────────────────
+  if (runId && pipeline) {
+    const completedCount = pipeline.steps.filter((s) => s.id in pipeline.run.completed_steps).length;
+    const totalCount = pipeline.steps.length || 1;
+    const pct = pipeline.steps.length === 0 ? 0 : Math.round((completedCount / totalCount) * 100);
+
+    return (
+      <div className="flex h-full min-h-0 flex-col overflow-hidden" role="region" aria-label="Pipeline steps">
+        <div className="px-3 pb-1 pt-2">
+          <button
+            onClick={() => navigate('/workflow')}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary"
+            type="button"
+          >
+            <ClipboardList className="h-4 w-4 shrink-0" />
+            <span>Browse Workflows</span>
+          </button>
+        </div>
+
+        <div className="border-b border-border-light px-4 pb-4 pt-1">
+          <Link
+            to={`/workflow/${pipeline.workflowId}`}
+            className="mb-2 flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary"
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+              <path d="m15 18-6-6 6-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            {pipeline.workflowName}
+          </Link>
+          <span className={cn('rounded-full px-2.5 py-0.5 text-xs font-semibold', PIPELINE_STATUS_BADGE[pipeline.run.status])}>
+            {PIPELINE_STATUS_LABEL[pipeline.run.status]}
+          </span>
+          {pipeline.steps.length > 0 && (
+            <div className="mt-3">
+              <div className="flex justify-between text-xs text-text-secondary">
+                <span>{completedCount}/{totalCount} steps</span>
+                <span>{pct}%</span>
+              </div>
+              <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-surface-tertiary">
+                <div className="h-full rounded-full bg-blue-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-3 py-4">
+          {pipeline.steps.length === 0 ? (
+            <p className="px-2 text-xs text-text-secondary">No steps defined.</p>
+          ) : (
+            <ul className="space-y-1">
+              {pipeline.steps.map((step) => {
+                const state = getPipelineStepState(step, pipeline.run);
+                const isActive = state === 'running' || state === 'awaiting';
+                return (
+                  <li
+                    key={step.id}
+                    className={cn(
+                      'flex items-start gap-3 rounded-xl px-3 py-2.5',
+                      isActive ? 'bg-surface-hover' : '',
+                    )}
+                  >
+                    <div className="mt-0.5">
+                      <PipelineStepIcon state={state} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className={cn(
+                        'text-sm font-medium leading-tight',
+                        state === 'completed' ? 'text-text-primary' :
+                        state === 'awaiting' ? 'text-purple-700 dark:text-purple-400' :
+                        state === 'running' ? 'text-text-primary' :
+                        'text-text-secondary',
+                      )}>
+                        {step.label ?? step.id}
+                      </p>
+                      {state === 'running' && (
+                        <p className="mt-0.5 text-xs text-blue-500">Processing…</p>
+                      )}
+                      {state === 'awaiting' && (
+                        <p className="mt-0.5 text-xs text-purple-600 dark:text-purple-400">Your input needed</p>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Default: recent runs list ─────────────────────────────────────────────
   return (
     <div
       className="flex h-full min-h-0 flex-col overflow-hidden pb-3"

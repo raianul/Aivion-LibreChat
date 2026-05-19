@@ -162,6 +162,13 @@ export const router = createBrowserRouter(
               ),
             },
             {
+              path: 'connections',
+              lazy: () =>
+                import('~/components/Aivion/Connections/ConnectionsPage').then((m) => ({
+                  Component: m.default,
+                })),
+            },
+            {
               path: 'workflow',
               lazy: () =>
                 import('~/components/Aivion/Workflow/WorkflowLayout').then((m) => ({

@@ -15,6 +15,10 @@ const validateMessageReq = async (req, res, next) => {
   const conversation = await getConvo(req.user.id, conversationId);
 
   if (!conversation) {
+    // Allow POST through — saveMessage + saveConvo in the handler will create it.
+    if (req.method === 'POST') {
+      return next();
+    }
     return res.status(404).json({ error: 'Conversation not found' });
   }
 

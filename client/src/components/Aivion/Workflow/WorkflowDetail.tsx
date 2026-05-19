@@ -3,6 +3,12 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { useAuthContext } from '~/hooks/AuthContext';
 import type { Workflow, WorkflowInputField } from './types';
 
+const SERVICE_LABELS: Record<string, string> = {
+  gmail: 'Gmail',
+  google_drive: 'Google Drive',
+  google_calendar: 'Google Calendar',
+};
+
 const STEP_BADGE: Record<string, string> = {
   llm: 'AI',
   file_extract: 'Extract',
@@ -140,22 +146,33 @@ export default function WorkflowDetail() {
   valuesRef.current = values;
 
   useEffect(() => {
-    fetch('/api/aivion/workflow/workflows', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((r) => { if (!r.ok) throw new Error(); return r.json(); })
-      .then((data: Workflow[]) => {
-        setWorkflows(data);
-        const wf = data.find((w) => w.id === id);
+    if (!id || !token) return;
+    Promise.all([
+      fetch('/api/aivion/workflow/workflows', {
+        headers: { Authorization: `Bearer ${token}` },
+      }).then((r) => { if (!r.ok) throw new Error(); return r.json() as Promise<Workflow[]>; }),
+      fetch(`/api/aivion/workflow/workflows/${id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      }).then((r) => (r.ok ? r.json() as Promise<Workflow> : null)).catch(() => null),
+    ])
+      .then(([list, detail]) => {
+        setWorkflows(list);
+        const fromList = list.find((w) => w.id === id);
+        const wf = detail ?? fromList;
         if (wf) {
           const init: Record<string, string> = {};
-          for (const f of wf.spec.inputs ?? []) init[f.name] = '';
+          for (const f of wf.spec?.inputs ?? []) init[f.name] = '';
           setValues(init);
+        }
+        if (detail && fromList) {
+          setWorkflows(list.map((w) =>
+            w.id === id ? { ...fromList, ...detail, is_runnable: fromList.is_runnable, missing_connections: fromList.missing_connections } : w,
+          ));
         }
       })
       .catch(() => setLoadError(true))
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, token]);
 
   const workflow = workflows.find((w) => w.id === id);
   const steps = (workflow?.spec.steps ?? []).filter((s) => s.type !== 'scrub' && s.type !== 'unscrub');
@@ -279,6 +296,31 @@ export default function WorkflowDetail() {
             {inputs.length > 0 ? 'Fill in the details below, then click Start.' : 'This workflow requires no inputs — click Start to run it immediately.'}
           </p>
 
+          {workflow.is_runnable === false && (workflow.missing_connections?.length ?? 0) > 0 && (
+            <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-700/40 dark:bg-amber-900/15">
+              <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                Connect required services to run this workflow
+              </p>
+              <ul className="mt-2 space-y-1">
+                {(workflow.missing_connections ?? []).map((svc) => (
+                  <li key={svc} className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                    {SERVICE_LABELS[svc] ?? svc}
+                  </li>
+                ))}
+              </ul>
+              <Link
+                to="/connections"
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-1.5 text-sm font-semibold text-white hover:bg-amber-600"
+              >
+                Connect services
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+                  <path d="m9 18 6-6-6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </Link>
+            </div>
+          )}
+
           <form onSubmit={handleStart} className="mt-6 space-y-5">
             {startError && (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
@@ -306,7 +348,7 @@ export default function WorkflowDetail() {
 
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || workflow.is_runnable === false}
               className="w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto sm:px-8"
             >
               {submitting ? 'Starting…' : 'Start run'}

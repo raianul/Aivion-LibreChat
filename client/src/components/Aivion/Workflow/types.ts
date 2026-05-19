@@ -2,6 +2,7 @@ export type WorkflowStep = {
   id: string;
   type: 'llm' | 'file_extract' | 'user_input' | 'scrub' | 'unscrub' | 'integration' | 'loop' | 'template';
   label?: string;
+  review_chat_system_prompt?: string;
 };
 
 export type WorkflowInputField = {
@@ -46,12 +47,25 @@ export type Workflow = {
   spec: WorkflowSpec;
   is_active: boolean;
   version: number;
+  is_runnable?: boolean;
+  required_connections?: string[];
+  missing_connections?: string[];
+};
+
+export type ServiceConnection = {
+  service_key: string;
+  display_name: string;
+  icon?: string | null;
+  connected: boolean;
+  account_email?: string | null;
+  connected_at?: string | null;
 };
 
 export type RunStatus =
   | 'pending'
   | 'running'
   | 'awaiting_user'
+  | 'awaiting_oauth'
   | 'completed'
   | 'failed'
   | 'cancelled';
